@@ -2,7 +2,7 @@
 Safe reconnecting proxy over RedisClient.
 """
 
-from twisted.internet import defer, protocol, reactor
+from twisted.internet import defer, protocol, reactor, task
 from twisted.python import failure, log
 
 from txredis.protocol import Redis
@@ -117,7 +117,7 @@ class RedisReconnectingProxy(object):
     @ivar timeout_retry: timeout for reconnect and operation retry (sec)
     @type timeout_retry: C{int}
     @ivar timeout_operation: timeout for Redis operation (sec)
-    @type timeout_oeration: C{int}
+    @type timeout_operation: C{int}
     @ivar max_attempts: maximum number of attempts 
     @type max_attempts: C{int}
     """
@@ -133,7 +133,7 @@ class RedisReconnectingProxy(object):
         @param timeout_retry: timeout for reconnect and operation retry (sec)
         @type timeout_retry: C{int}
         @param timeout_operation: timeout for Redis operation (sec)
-        @type timeout_oeration: C{int}
+        @type timeout_operation: C{int}
         @param max_attempts: maximum number of attempts 
         @type max_attempts: C{int}
         """
@@ -143,6 +143,17 @@ class RedisReconnectingProxy(object):
         self.timeout_operation = timeout_operation
         self.max_attempts = max_attempts
         self.connection = None
+        self.pinger = task.LoopingCall(self._ping)
+        self.pinger.start(self.timeout_operation / 2)
+
+    def _ping(self):
+        """
+        Periodic Redis ping.
+        """
+        if self.connection is None:
+            return
+
+        return self.ping().addErrback(log.err, "Failure while doing periodic ping")
 
     def _cleanup(self):
         """
@@ -150,7 +161,10 @@ class RedisReconnectingProxy(object):
         """
         if self.connection is not None:
             self.connection.transport.loseConnection()
+            self.connection.setTimeout(None)
             self.connection = None
+            self.pinger.stop()
+            self.pinger = None
 
     def __repr__(self):
         return "<RedisReconnectingProxy(%r:%r)>" % (self.host, self.port)
@@ -172,6 +186,7 @@ class RedisReconnectingProxy(object):
 
         def gotProtocol(protocol):
             self.connection = protocol
+            self.connection.setTimeout(self.timeout_operation)
             waiter = self.waiter
             del self.waiter
 
