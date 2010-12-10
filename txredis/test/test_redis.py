@@ -169,15 +169,24 @@ class General(CommandsTestBase):
         r = self.redis
         t = self.assertEqual
 
-        a = yield r.rename('a', 'a')
-        ex = ResponseError('source and destination objects are the same')
-        t(str(a), str(ex))
+        try:
+            yield r.rename('a', 'a')
+
+            self.fail("ResponseError expected")
+        except ResponseError, e:
+            t(str(e), 'source and destination objects are the same')
+
         a = yield r.rename('a', 'b')
         ex = 'OK'
         t(a, ex)
-        a = yield r.rename('a', 'b')
-        ex = ResponseError('no such key')
-        t(str(a), str(ex))
+
+        try:
+            yield r.rename('a', 'b')
+
+            self.fail("ResponseError expected")
+        except ResponseError, e:
+            t(str(e), 'no such key')
+
         a = yield r.set('a', 1)
         ex = 'OK'
         t(a, ex)
@@ -388,8 +397,12 @@ class General(CommandsTestBase):
     @defer.inlineCallbacks
     def test_execute(self):
         # exec without multi will return ResponseError
-        r = yield self.redis.execute()
-        self.assertEqual(str(r), 'EXEC without MULTI')
+        try:
+            yield self.redis.execute()
+
+            self.fail('ResponseError expected')
+        except ResponseError, r:
+            self.assertEqual(str(r), 'EXEC without MULTI')
 
         # multi with two sets
         yield self.redis.multi()
@@ -405,8 +418,12 @@ class General(CommandsTestBase):
     @defer.inlineCallbacks
     def test_discard(self):
         # discard without multi will return ResponseError
-        r = yield self.redis.execute()
-        self.assertEqual(str(r), 'EXEC without MULTI')
+        try:
+            yield self.redis.execute()
+
+            self.fail('ResponseError expected')
+        except ResponseError, r: 
+            self.assertEqual(str(r), 'EXEC without MULTI')
 
         # multi with two sets
         yield self.redis.set('foo', 'bar1')
