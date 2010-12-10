@@ -1014,13 +1014,21 @@ class Sets(CommandsTestBase):
         a = yield r.sadd('s3', 'b')
         ex = 1
         t(a, ex)
-        a = yield r.sinter()
-        ex = ResponseError("wrong number of arguments for 'sinter' command")
-        t(str(a), str(ex))
-        a = yield r.sinter('l')
-        ex = ResponseError('Operation against a key holding the wrong kind '+
+
+        try:
+            yield r.sinter()
+            
+            self.fail("ResponseError expected")
+        except ResponseError, e:
+            t(str(e), "wrong number of arguments for 'sinter' command")
+
+        try:
+            yield r.sinter('l')
+            self.fail("ResponseError expected")
+        except ResponseError, e:
+            t(str(e), 'Operation against a key holding the wrong kind '+
                            'of value')
-        t(str(a), str(ex))
+
         a = yield r.sinter('s1', 's2', 's3')
         ex = set([])
         t(a, ex)
@@ -1069,10 +1077,14 @@ class Sets(CommandsTestBase):
         a = yield r.sadd('s', 'b')
         ex = 1
         t(a, ex)
-        a = yield r.smembers('l')
-        ex = ResponseError('Operation against a key holding the wrong kind '+
+
+        try:
+            yield r.smembers('l')
+            self.fail("ResponseError expected")
+        except ResponseError, e:
+            t(str(e), 'Operation against a key holding the wrong kind '+
                            'of value')
-        t(str(a), str(ex))
+
         a = yield r.smembers('s')
         ex = set([u'a', u'b'])
         t(a, ex)
@@ -1603,8 +1615,13 @@ class Protocol(unittest.TestCase):
         self.assertEquals(self.transport.value(), "GET foo\r\n")
         msg = "Operation against a key holding the wrong kind of value"
         self.sendResponse("-%s\r\n" % msg)
-        r = yield d
-        self.assertEquals(str(r), msg)
+
+        try:
+            yield d
+
+            self.fail("ResponseError expected")
+        except ResponseError, e:
+            self.assertEquals(str(e), msg)
 
     @defer.inlineCallbacks
     def test_singleline_response(self):
