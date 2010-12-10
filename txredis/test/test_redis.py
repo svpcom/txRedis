@@ -630,10 +630,14 @@ class Lists(CommandsTestBase):
         a = yield r.set('a', 'a')
         ex = 'OK'
         t(a, ex)
-        a = yield r.push('a', 'a')
-        ex = ResponseError('Operation against a key holding the wrong kind '+
+
+        try:
+            yield r.push('a', 'a')
+
+            self.fail('ResponseError expected')
+        except ResponseError, e:
+            t(str(e), 'Operation against a key holding the wrong kind '+
                            'of value')
-        t(str(a), str(ex))
 
     @defer.inlineCallbacks
     def test_llen(self):
@@ -782,15 +786,25 @@ class Lists(CommandsTestBase):
         t = self.assertEqual
 
         yield r.delete('l')
-        a = yield r.lset('l', 0, 'a')
-        ex = ResponseError('no such key')
-        t(str(a), str(ex))
+
+        try:
+            yield r.lset('l', 0, 'a')
+
+            self.fail('ResponseError expected')
+        except ResponseError, e:
+            t(str(e), 'no such key')
+
         a = yield r.push('l', 'aaa')
         ex = 1
         t(a, ex)
-        a = yield r.lset('l', 1, 'a')
-        ex = ResponseError('index out of range')
-        t(str(a), str(ex))
+
+        try:
+            yield r.lset('l', 1, 'a')
+
+            self.fail('ResponseError expected')
+        except ResponseError, e:
+            t(str(e), 'index out of range')
+
         a = yield r.lset('l', 0, 'bbb')
         ex = 'OK'
         t(a, ex)
