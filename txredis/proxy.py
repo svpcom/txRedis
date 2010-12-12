@@ -163,6 +163,7 @@ class RedisReconnectingProxy(object):
             self.connection.transport.loseConnection()
             self.connection.setTimeout(None)
             self.connection = None
+        if self.pinger is not None:
             self.pinger.stop()
             self.pinger = None
 
