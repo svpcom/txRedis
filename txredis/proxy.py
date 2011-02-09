@@ -209,5 +209,5 @@ for method in ['ping', 'get_config', 'set_config', 'get', 'set', 'mset', 'incr',
                'sadd', 'srem', 'spop', 'scard', 'sismember', 'sdiff', 'sdiffstore', 'srandmember', 'sinter', 'sinterstore', 'smembers', 'smove', 'sunion',
                'sunionstore', 'hmset', 'hset', 'hget', 'hmget', 'hkeys', 'hvals', 'hincr', 'hexists', 'hdelete', 'hlen', 'hgetall', 'publish',
                'zadd', 'zrem', 'zremrangebyscore', 'zremrangebyrank', 'zunionstore', 'zinterstore', 'zincr', 'zrank', 'zcount', 'zrange', 'zrevrange',
-               'zrangebyscore', 'zcard', 'zscore', 'flush', 'execute', 'select', 'save', 'multi', 'info', 'move', 'lastsave', 'discard', 'sort']:
+               'zrangebyscore', 'zcard', 'zscore', 'flush', 'execute', 'select', 'save', 'multi', 'info', 'move', 'lastsave', 'discard', 'sort', 'hsetnx']:
     setattr(RedisReconnectingProxy, method, _method_template(method))
