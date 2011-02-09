@@ -93,7 +93,7 @@ class InvalidData(RedisError):
     pass
 
 
-class RedisBase(protocol.Protocol, policies.TimeoutMixin):
+class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
     """The main Redis client."""
 
     ERROR = "-"
@@ -218,7 +218,12 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin):
     def errorReceived(self, data):
         """Error response received."""
         reply = ResponseError(data[4:] if data[:4] == 'ERR ' else data)
-        self.responseReceived(reply)
+        if self._request_queue:
+            # properly errback this reply
+            self._request_queue.popleft().errback(reply)
+        else:
+            # we should have a request queue - if not, just raise this exception
+            raise reply
 
     def singleLineReceived(self, data):
         """Single line response received."""
@@ -251,20 +256,7 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin):
     def bulkDataReceived(self, data):
         """Bulk data response received."""
         self._bulk_length = None
-
-        # try to convert to int/float, otherwise treat as string
-        try:
-            if data is None:
-                element = None
-            elif '.' in data:
-                element = float(data)
-            else:
-                element = int(data)
-        except ValueError:
-            element = data
-            #element = data.decode(self.charset)
-
-        self.responseReceived(element)
+        self.responseReceived(data)
 
     def multiBulkDataReceived(self):
         """Multi bulk response received.
@@ -327,6 +319,10 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin):
             cmds.append('$%s\r\n%s\r\n' % (len(v), v))
         cmd = '*%s\r\n' % len(args) + ''.join(cmds)
         self.transport.write(cmd)
+
+    def send(self, command, *args):
+        self._send(command, *args)
+        return self.getResponse()
 
 class Redis(RedisBase):
     """The main Redis client."""
@@ -399,9 +395,10 @@ class Redis(RedisBase):
         self._send('APPEND', key, value)
         return self.getResponse()
 
-    def substr(self, key, start, end):
-        self._send('SUBSTR', key, start, end)
+    def getrange(self, key, start, end):
+        self._send('GETRANGE', key, start, end)
         return self.getResponse()
+    substr = getrange
 
     def get(self, key):
         """
@@ -549,7 +546,17 @@ class Redis(RedisBase):
 
         @note Time complexity: O(1)
         """
-        self._send('RPUSH' if tail else 'LPUSH', key, value)
+        if tail:
+            return self.rpush(key, value)
+        else:
+            return self.lpush(key, value)
+
+    def lpush(self, key, value):
+        self._send('LPUSH', key, value)
+        return self.getResponse()
+
+    def rpush(self, key, value):
+        self._send('RPUSH', key, value)
         return self.getResponse()
 
     def llen(self, key):
@@ -891,7 +898,17 @@ class Redis(RedisBase):
     def flush(self, all_dbs=False):
         """
         """
-        self._send('FLUSHALL' if all_dbs else 'FLUSHDB')
+        if all_dbs:
+            return self.flushall()
+        else:
+            return self.flushdb()
+
+    def flushall(self):
+        self._send('FLUSHALL')
+        return self.getResponse()
+
+    def flushdb(self):
+        self._send('FLUSHDB')
         return self.getResponse()
 
     # Persistence control commands
@@ -969,18 +986,40 @@ class Redis(RedisBase):
     # HVALS
     # HGETALL
     def hmset(self, key, in_dict):
+        """
+        Sets the specified fields to their respective values in the hash stored
+        at key. This command overwrites any existing fields in the hash. If key
+        does not exist, a new key holding a hash is created.
+        """
         fields = list(chain(*in_dict.iteritems()))
         self._send('HMSET', key, *fields)
         return self.getResponse()
 
     def hset(self, key, field, value, preserve=False):
+        """
+        Sets field in the hash stored at key to value. If key does not exist, a
+        new key holding a hash is created. If field already exists in the hash,
+        it is overwritten.
+        """
         if preserve:
-            self._send('HSETNX', key, field, value)
+            return self.hsetnx(key, field, value)
         else:
             self._send('HSET', key, field, value)
+            return self.getResponse()
+
+    def hsetnx(self, key, field, value):
+        """
+        Sets field in the hash stored at key to value, only if field does not
+        yet exist. If key does not exist, a new key holding a hash is created.
+        If field already exists, this operation has no effect.
+        """
+        self._send('HSETNX', key, field, value)
         return self.getResponse()
 
     def hget(self, key, field):
+        """
+        Returns the value associated with field in the hash stored at key.
+        """
         if isinstance(field, basestring):
             self._send('HGET', key, field)
         else:
@@ -996,6 +1035,11 @@ class Redis(RedisBase):
         return self.getResponse().addCallback(post_process)
     hmget = hget
 
+    def hget_value(self, key, field):
+        assert isinstance(field, basestring)
+        self._send('HGET', key, field)
+        return self.getResponse()
+
     def hkeys(self, key):
         self._send('HKEYS', key)
         return self.getResponse()
@@ -1005,22 +1049,46 @@ class Redis(RedisBase):
         return self.getResponse()
 
     def hincr(self, key, field, amount=1):
+        """
+        Increments the number stored at field in the hash stored at key by
+        increment. If key does not exist, a new key holding a hash is created.
+        If field does not exist or holds a string that cannot be interpreted as
+        integer, the value is set to 0 before the operation is performed.  The
+        range of values supported by HINCRBY is limited to 64 bit signed
+        integers.
+        """
         self._send('HINCRBY', key, field, amount)
         return self.getResponse()
+    hincrby = hincr
 
     def hexists(self, key, field):
+        """
+        Returns if field is an existing field in the hash stored at key.
+        """
         self._send('HEXISTS', key, field)
         return self.getResponse()
 
-    def hdelete(self, key, field):
+    def hdel(self, key, field):
+        """
+        Removes field from the hash stored at key.
+        """
         self._send('HDEL', key, field)
         return self.getResponse()
+    hdelete = hdel # backwards compat for older txredis
 
     def hlen(self, key):
+        """
+        Returns the number of fields contained in the hash stored at key.
+        """
         self._send('HLEN', key)
         return self.getResponse()
 
     def hgetall(self, key):
+        """
+        Returns all fields and values of the hash stored at key. In the
+        returned value, every field name is followed by its value, so the
+        length of the reply is twice the size of the hash.
+        """
         self._send('HGETALL', key)
 
         def post_process(key_vals):
@@ -1133,7 +1201,7 @@ class Redis(RedisBase):
             bins = len(vals_and_scores) - 1
             i = 0
             while i < bins:
-                res.append((vals_and_scores[i], vals_and_scores[i+1]))
+                res.append((vals_and_scores[i], float(vals_and_scores[i+1])))
                 i += 2
             return res
 
@@ -1150,7 +1218,7 @@ class Redis(RedisBase):
 
     def zscore(self, key, element):
         self._send('ZSCORE', key, element)
-        return self.getResponse()
+        return self.getResponse().addCallback(float)
 
     def zrangebyscore(self, key, min='-inf', max='+inf', offset=None,
                       count=None, withscores=False):
@@ -1168,7 +1236,7 @@ class Redis(RedisBase):
             bins = len(vals_and_scores) - 1
             i = 0
             while i < bins:
-                res.append((vals_and_scores[i], vals_and_scores[i+1]))
+                res.append((vals_and_scores[i], float(vals_and_scores[i+1])))
                 i += 2
             return res
 

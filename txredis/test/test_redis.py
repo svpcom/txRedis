@@ -5,7 +5,7 @@ from twisted.internet import error
 from twisted.internet import protocol
 from twisted.internet import reactor
 from twisted.internet import defer
-from twisted.internet.task import Clock, deferLater
+from twisted.internet.task import Clock
 from twisted.test.proto_helpers import StringTransportWithDisconnection
 from twisted.trial import unittest
 
@@ -37,7 +37,6 @@ class General(CommandsTestBase):
 
     @defer.inlineCallbacks
     def test_config(self):
-        r = self.redis
         t = self.assertEqual
         a = yield self.redis.get_config('*')
         self.assertTrue(isinstance(a, dict))
@@ -164,6 +163,17 @@ class General(CommandsTestBase):
         ex = True
         t(a, ex)
 
+    def test_rename_same_src_dest(self):
+        r = self.redis
+        t = self.assertEqual
+        d = r.rename('a', 'a')
+        self.failUnlessFailure(d, ResponseError)
+        def test_err(a):
+            ex = ResponseError('source and destination objects are the same')
+            t(str(a), str(ex))
+        d.addCallback(test_err)
+        return d
+
     @defer.inlineCallbacks
     def test_rename(self):
         r = self.redis
@@ -258,7 +268,10 @@ class General(CommandsTestBase):
 
         string = 'This is a string'
         r.set('s', string)
-        a = yield r.substr('s', 0, 3)
+        a = yield r.substr('s', 0, 3) # old name
+        ex = 'This'
+        t(a, ex)
+        a = yield r.getrange('s', 0, 3) # new name
         ex = 'This'
         t(a, ex)
 
@@ -363,8 +376,8 @@ class General(CommandsTestBase):
         a = yield r.save()
         ex = 'OK'
         t(a, ex)
-        resp = yield r.save(background=True)
         """
+        resp = yield r.save(background=True)
         ex = ResponseError(
         ...     assert str(e) == 'background save already in progress', str(e)
         ... else:
@@ -423,25 +436,39 @@ class General(CommandsTestBase):
         r = yield self.redis.get('foo')
         self.assertEqual(r, 'barbar')
 
-    @defer.inlineCallbacks
     def test_discard(self):
+        d = self.redis.execute()
         # discard without multi will return ResponseError
-        try:
-            yield self.redis.execute()
-
-            self.fail('ResponseError expected')
-        except ResponseError, r: 
-            self.assertEqual(str(r), 'EXEC without MULTI')
+        d = self.failUnlessFailure(d, ResponseError)
 
         # multi with two sets
-        yield self.redis.set('foo', 'bar1')
-        yield self.redis.multi()
-        r = yield self.redis.set('foo', 'bar2')
-        r = yield self.redis.discard()
-        self.assertEqual(r, 'OK')
-        r = yield self.redis.get('foo')
-        self.assertEqual(r, 'bar1')
+        def step1(_res):
+            d = self.redis.set('foo', 'bar1')
 
+            def step2(_res):
+                d = self.redis.multi()
+                def in_multi(_res):
+                    d = self.redis.set('foo', 'bar2')
+                    def step3(_res):
+                        d = self.redis.discard()
+                        def step4(r):
+                            self.assertEqual(r, 'OK')
+                            d = self.redis.get('foo')
+                            def got_it(res):
+                                self.assertEqual(res, 'bar1')
+                            d.addCallback(got_it)
+                            return d
+                        d.addCallback(step4)
+                        return d
+                    d.addCallback(step3)
+                    return d
+                d.addCallback(in_multi)
+                return d
+            d.addCallback(step2)
+            return d
+
+        d.addCallback(step1)
+        return d
 
 class Strings(CommandsTestBase):
     """Test commands that operate on string values.
@@ -473,7 +500,7 @@ class Strings(CommandsTestBase):
         self.assertEqual(a, 0)
 
         a = yield self.redis.get('b')
-        self.assertEqual(a, 105.2)
+        self.assertEqual(a, '105.2')
 
     @defer.inlineCallbacks
     def test_get(self):
@@ -493,7 +520,7 @@ class Strings(CommandsTestBase):
         t(a, u'pippo')
 
         a = yield r.get('b')
-        ex = 15
+        ex = '15'
         t(a, ex)
 
         a = yield r.get('d')
@@ -501,7 +528,7 @@ class Strings(CommandsTestBase):
         t(a, ex)
 
         a = yield r.get('b')
-        ex = 15
+        ex = '15'
         t(a, ex)
 
         a = yield r.get('c')
@@ -543,7 +570,7 @@ class Strings(CommandsTestBase):
         ex = 'OK'
         t(a, ex)
         a = yield r.mget('a', 'b', 'c', 'd')
-        ex = [u'pippo', 15,
+        ex = [u'pippo', '15',
               u'\\r\\naaa\\nbbb\\r\\ncccc\\nddd\\r\\n', u'\\r\\n']
         t(a, ex)
 
@@ -787,6 +814,44 @@ class Lists(CommandsTestBase):
         a = yield r.pop('l')
         ex = None
         t(a, ex)
+
+    def test_lset_on_nonexistant_key(self):
+        r = self.redis
+        t = self.assertEqual
+
+        d = r.delete('l')
+        def bad_lset(_res):
+            d = r.lset('l', 0, 'a')
+            self.failUnlessFailure(d, ResponseError)
+            def match_err(a):
+                ex = ResponseError('no such key')
+                t(str(a), str(ex))
+            d.addCallback(match_err)
+            return d
+        d.addCallback(bad_lset)
+        return d
+
+    def test_lset_bad_range(self):
+        r = self.redis
+        t = self.assertEqual
+
+        d = r.delete('l')
+        def proceed(_res):
+            d = r.push('l', 'aaa')
+            def done_push(a):
+                ex = 1
+                t(a, ex)
+                d = r.lset('l', 1, 'a')
+                self.failUnlessFailure(d, ResponseError)
+                def check(a):
+                    ex = ResponseError('index out of range')
+                    t(str(a), str(ex))
+                d.addCallback(check)
+                return d
+            d.addCallback(done_push)
+            return d
+        d.addCallback(proceed)
+        return d
 
     @defer.inlineCallbacks
     def test_lset(self):
@@ -1149,9 +1214,27 @@ class Sets(CommandsTestBase):
         t(a, ex)
 
     @defer.inlineCallbacks
+    def test_sort_style(self):
+        # considering, given that redis only stores strings, whether the sort it
+        # provides is a numeric or a lexicographical sort; turns out that it's
+        # numeric; i.e. redis is doing implicit type coercion for the sort of
+        # numeric values.  This test serves to document that, and to a lesser
+        # extent check for regression in the implicit str() marshalling of txredis
+        r = self.redis
+        t = self.assertEqual
+        yield r.delete('l')
+        items = [ 007, 10, -5, 0.1, 100, -3, 20, 0.02, -3.141 ]
+        for i in items:
+            yield r.push('l', i, tail=True)
+        a = yield r.sort('l')
+        ex = map(str, sorted(items))
+        t(a, ex)
+
+    @defer.inlineCallbacks
     def test_sort(self):
         r = self.redis
         t = self.assertEqual
+        s = lambda l: map(str, l)
 
         yield r.delete('l')
         a = yield r.push('l', 'ccc')
@@ -1175,27 +1258,27 @@ class Sets(CommandsTestBase):
         for i in range(1, 5):
             yield r.push('l', 1.0 / i, tail=True)
         a = yield r.sort('l')
-        ex = [0.25, 0.333333333333, 0.5, 1.0]
+        ex = s([0.25, 0.333333333333, 0.5, 1.0])
         t(a, ex)
         a = yield r.sort('l', desc=True)
-        ex = [1.0, 0.5, 0.333333333333, 0.25]
+        ex = s([1.0, 0.5, 0.333333333333, 0.25])
         t(a, ex)
         a = yield r.sort('l', desc=True, start=2, num=1)
-        ex = [0.333333333333]
+        ex = s([0.333333333333])
         t(a, ex)
         a = yield r.set('weight_0.5', 10)
         ex = 'OK'
         t(a, ex)
         a = yield r.sort('l', desc=True, by='weight_*')
-        ex = [0.5, 1.0, 0.333333333333, 0.25]
+        ex = s([0.5, 1.0, 0.333333333333, 0.25])
         t(a, ex)
         for i in (yield r.sort('l', desc=True)):
             yield r.set('test_%s' % i, 100 - float(i))
         a = yield r.sort('l', desc=True, get='test_*')
-        ex = [99.0, 99.5, 99.6666666667, 99.75]
+        ex = s([99.0, 99.5, 99.6666666667, 99.75])
         t(a, ex)
         a = yield r.sort('l', desc=True, by='weight_*', get='test_*')
-        ex = [99.5, 99.0, 99.6666666667, 99.75]
+        ex = s([99.5, 99.0, 99.6666666667, 99.75])
         t(a, ex)
         a = yield r.sort('l', desc=True, by='weight_*', get='missing_*')
         ex = [None, None, None, None]
@@ -1214,7 +1297,7 @@ class Sets(CommandsTestBase):
             a = yield r.set(key, value)
             t('OK', a)
             rval = yield r.get(key)
-            t(value, rval)
+            t(rval, str(value))
 
 
 class Hash(CommandsTestBase):
@@ -1229,6 +1312,24 @@ class Hash(CommandsTestBase):
         self.assertEquals(a, '')
         a = yield self.redis.hgetall('h')
         self.assertEquals(a, {'blank': ''})
+
+    @defer.inlineCallbacks
+    def test_cas(self):
+        r = self.redis
+        t = self.assertEqual
+
+        a = yield r.delete('h')
+        ex = 1
+        t(a, ex)
+
+        a = yield r.hsetnx('h', 'f', 'v')
+        ex = 1
+        t(a, ex)
+
+        a = yield r.hsetnx('h', 'f', 'v')
+        ex = 0
+        t(a, ex)
+
 
     @defer.inlineCallbacks
     def test_basic(self):
@@ -1367,7 +1468,7 @@ class LargeMultiBulk(CommandsTestBase):
         for i in data:
             r.sadd('s', i)
         res = yield r.smembers('s')
-        t(res, data)
+        t(res, set(map(str, data)))
 
 
 class SortedSet(CommandsTestBase):
@@ -1627,20 +1728,16 @@ class Protocol(unittest.TestCase):
     def sendResponse(self, data):
         self.proto.dataReceived(data)
 
-    @defer.inlineCallbacks
     def test_error_response(self):
         # pretending 'foo' is a set, so get is incorrect
         d = self.proto.get("foo")
         self.assertEquals(self.transport.value(), '*2\r\n$3\r\nGET\r\n$3\r\nfoo\r\n')
         msg = "Operation against a key holding the wrong kind of value"
         self.sendResponse("-%s\r\n" % msg)
-
-        try:
-            yield d
-
-            self.fail("ResponseError expected")
-        except ResponseError, e:
-            self.assertEquals(str(e), msg)
+        self.failUnlessFailure(d, ResponseError)
+        def check_err(r):
+            self.assertEquals(str(r), msg)
+        return d
 
     @defer.inlineCallbacks
     def test_singleline_response(self):
@@ -1748,7 +1845,6 @@ class PubSub(CommandsTestBase):
 
     @defer.inlineCallbacks
     def test_subscribe(self):
-        r = self.redis
         s = self.subscriber
         t = self.assertEqual
 
@@ -1770,9 +1866,7 @@ class PubSub(CommandsTestBase):
 
     @defer.inlineCallbacks
     def test_unsubscribe(self):
-        r = self.redis
         s = self.subscriber
-        t = self.assertEqual
 
         cb = s.channel_subscribed
         yield s.subscribe("channelA", "channelB", "channelC")
@@ -1786,7 +1880,6 @@ class PubSub(CommandsTestBase):
 
     @defer.inlineCallbacks
     def test_psubscribe(self):
-        r = self.redis
         s = self.subscriber
         t = self.assertEqual
 
@@ -1808,9 +1901,7 @@ class PubSub(CommandsTestBase):
 
     @defer.inlineCallbacks
     def test_punsubscribe(self):
-        r = self.redis
         s = self.subscriber
-        t = self.assertEqual
 
         cb = s.channel_subscribed
         yield s.psubscribe("channel*", "magic*", "woot*")
