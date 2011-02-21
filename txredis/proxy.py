@@ -5,7 +5,13 @@ Safe reconnecting proxy over RedisClient.
 from twisted.internet import defer, protocol, reactor, task
 from twisted.python import failure, log
 
-from txredis.protocol import Redis
+try:
+    import hiredis
+    from txredis.protocol import HiRedisProtocol as Redis
+except ImportError:
+    from txredis.protocol import Redis
+
+from txredis.protocol import RedisBase
 
 
 class WaitingDeferred(object):
@@ -168,7 +174,7 @@ class RedisReconnectingProxy(object):
             self.pinger = None
 
     def __repr__(self):
-        return "<RedisReconnectingProxy(%r:%r)>" % (self.host, self.port)
+        return "<%sReconnectingProxy(%r:%r)>" % (Redis.__name__, self.host, self.port)
 
     def _get_connection(self):
         """
@@ -204,10 +210,7 @@ class RedisReconnectingProxy(object):
         return self.waiter.push()
 
 
-for method in ['ping', 'get_config', 'set_config', 'get', 'set', 'mset', 'incr', 'append', 'substr', 'getset', 'mget', 'decr', 'exists', 'delete', 'get_type',
-               'keys', 'randomkey', 'rename', 'dbsize', 'expire', 'ttl', 'push', 'llen', 'lrange', 'ltrim', 'lindex', 'pop', 'bpop', 'rpoplpush', 'lset', 'lrem',
-               'sadd', 'srem', 'spop', 'scard', 'sismember', 'sdiff', 'sdiffstore', 'srandmember', 'sinter', 'sinterstore', 'smembers', 'smove', 'sunion',
-               'sunionstore', 'hmset', 'hset', 'hget', 'hmget', 'hkeys', 'hvals', 'hincr', 'hexists', 'hdelete', 'hlen', 'hgetall', 'publish',
-               'zadd', 'zrem', 'zremrangebyscore', 'zremrangebyrank', 'zunionstore', 'zinterstore', 'zincr', 'zrank', 'zcount', 'zrange', 'zrevrange',
-               'zrangebyscore', 'zcard', 'zscore', 'flush', 'execute', 'select', 'save', 'multi', 'info', 'move', 'lastsave', 'discard', 'sort', 'hsetnx']:
+RedisReconnectingProxy.redis_methods = set([name for name in dir(Redis) if not name.startswith('_')]) - set(dir(RedisBase))
+
+for method in RedisReconnectingProxy.redis_methods:
     setattr(RedisReconnectingProxy, method, _method_template(method))
