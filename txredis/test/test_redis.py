@@ -195,7 +195,7 @@ class General(CommandsTestBase):
 
             self.fail("ResponseError expected")
         except ResponseError, e:
-            t(str(e), 'source and destination objects are the same')
+            t(str(e), 'ERR source and destination objects are the same')
 
         a = yield r.rename('a', 'b')
         ex = 'OK'
@@ -206,7 +206,7 @@ class General(CommandsTestBase):
 
             self.fail("ResponseError expected")
         except ResponseError, e:
-            t(str(e), 'no such key')
+            t(str(e), 'ERR no such key')
 
         a = yield r.set('a', 1)
         ex = 'OK'
@@ -428,7 +428,7 @@ class General(CommandsTestBase):
 
             self.fail('ResponseError expected')
         except ResponseError, r:
-            self.assertEqual(str(r), 'EXEC without MULTI')
+            self.assertEqual(str(r), 'ERR EXEC without MULTI')
 
         # multi with two sets
         yield self.redis.multi()
@@ -676,7 +676,7 @@ class Lists(CommandsTestBase):
 
             self.fail('ResponseError expected')
         except ResponseError, e:
-            t(str(e), 'Operation against a key holding the wrong kind '+
+            t(str(e), 'ERR Operation against a key holding the wrong kind '+
                            'of value')
 
     @defer.inlineCallbacks
@@ -870,7 +870,7 @@ class Lists(CommandsTestBase):
 
             self.fail('ResponseError expected')
         except ResponseError, e:
-            t(str(e), 'no such key')
+            t(str(e), 'ERR no such key')
 
         a = yield r.push('l', 'aaa')
         ex = 1
@@ -881,7 +881,7 @@ class Lists(CommandsTestBase):
 
             self.fail('ResponseError expected')
         except ResponseError, e:
-            t(str(e), 'index out of range')
+            t(str(e), 'ERR index out of range')
 
         a = yield r.lset('l', 0, 'bbb')
         ex = 'OK'
@@ -1098,13 +1098,13 @@ class Sets(CommandsTestBase):
             
             self.fail("ResponseError expected")
         except ResponseError, e:
-            t(str(e), "wrong number of arguments for 'sinter' command")
+            t(str(e), "ERR wrong number of arguments for 'sinter' command")
 
         try:
             yield r.sinter('l')
             self.fail("ResponseError expected")
         except ResponseError, e:
-            t(str(e), 'Operation against a key holding the wrong kind '+
+            t(str(e), 'ERR Operation against a key holding the wrong kind '+
                            'of value')
 
         a = yield r.sinter('s1', 's2', 's3')
@@ -1160,7 +1160,7 @@ class Sets(CommandsTestBase):
             yield r.smembers('l')
             self.fail("ResponseError expected")
         except ResponseError, e:
-            t(str(e), 'Operation against a key holding the wrong kind '+
+            t(str(e), 'ERR Operation against a key holding the wrong kind '+
                            'of value')
 
         a = yield r.smembers('s')
