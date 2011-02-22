@@ -110,7 +110,7 @@ def _method_template(method):
 class RedisReconnectingProxy(object):
     """
     I feel like always connected Redis protocol instance. 
-    
+
     If disconnect happens, and in case of any other error, I perform automatic
     and transparent reconnect.
 
@@ -128,7 +128,7 @@ class RedisReconnectingProxy(object):
     @type max_attempts: C{int}
     """
 
-    def __init__(self, host, port, timeout_retry=5, timeout_operation=180, max_attempts=3):
+    def __init__(self, host, port, db=None, timeout_retry=5, timeout_operation=180, max_attempts=3):
         """
         Constructor.
 
@@ -145,6 +145,7 @@ class RedisReconnectingProxy(object):
         """
         self.host = host
         self.port = port
+        self.db = db
         self.timeout_retry = timeout_retry
         self.timeout_operation = timeout_operation
         self.max_attempts = max_attempts
@@ -205,7 +206,7 @@ class RedisReconnectingProxy(object):
 
             waiter.errback(f)
 
-        protocol.ClientCreator(reactor, Redis).connectTCP(self.host, self.port, timeout=self.timeout_operation).addCallbacks(gotProtocol, errback)
+        protocol.ClientCreator(reactor, Redis, db=self.db).connectTCP(self.host, self.port, timeout=self.timeout_operation).addCallbacks(gotProtocol, errback)
 
         return self.waiter.push()
 
