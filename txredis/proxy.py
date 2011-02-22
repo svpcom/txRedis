@@ -175,7 +175,7 @@ class RedisReconnectingProxy(object):
             self.pinger = None
 
     def __repr__(self):
-        return "<%sReconnectingProxy(%r:%r)>" % (Redis.__name__, self.host, self.port)
+        return "<%sReconnectingProxy(%r:%r, %r)>" % (Redis.__name__, self.host, self.port, self.db)
 
     def _get_connection(self):
         """
