@@ -150,8 +150,7 @@ class RedisReconnectingProxy(object):
         self.timeout_operation = timeout_operation
         self.max_attempts = max_attempts
         self.connection = None
-        self.pinger = task.LoopingCall(self._ping)
-        self.pinger.start(self.timeout_operation / 2)
+        self.pinger = None
 
     def _ping(self):
         """
@@ -184,6 +183,10 @@ class RedisReconnectingProxy(object):
         @return: Deferred, resulting in connection
         @rtype: C{Deferred}
         """
+        if self.pinger is None:
+            self.pinger = task.LoopingCall(self._ping)
+            self.pinger.start(self.timeout_operation / 2)
+
         if self.connection is not None:
             return defer.succeed(self.connection)
 
