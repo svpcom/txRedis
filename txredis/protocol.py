@@ -727,6 +727,15 @@ class Redis(RedisBase):
         self._send('RPOP' if tail else 'LPOP', key)
         return self.getResponse()
 
+    def brpop(self, keys, timeout=30):
+        """
+        Issue a BRPOP - blockling list pop from the right.
+        @param keys is a list of one or more Redis keys
+        @param timeout max number of seconds to block for
+        """
+        self._send('BRPOP', *(list(keys) + [str(timeout)]))
+        return self.getResponse()
+
     def bpop(self, keys, tail=False, timeout=30):
         """
         @param keys a list of one or more Redis keys of non-empty list(s)
@@ -1352,7 +1361,12 @@ class Redis(RedisBase):
 
     def zscore(self, key, element):
         self._send('ZSCORE', key, element)
-        return self.getResponse().addCallback(float)
+        def post_process(res):
+            if res is not None:
+                return float(res)
+            else:
+                return res
+        return self.getResponse().addCallback(post_process)
 
     def zrangebyscore(self, key, min='-inf', max='+inf', offset=None,
                       count=None, withscores=False):
