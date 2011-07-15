@@ -1,4 +1,3 @@
-
 import time
 
 from twisted.internet import error
@@ -117,6 +116,15 @@ class General(CommandsTestBase):
         t(a, ex)
         a = yield r.delete('a')
         ex = 0
+        t(a, ex)
+        a = yield r.set('a', 'a')
+        ex = 'OK'
+        t(a, ex)
+        a = yield r.set('b', 'b')
+        ex = 'OK'
+        t(a, ex)
+        a = yield r.delete('a', 'b')
+        ex = 2
         t(a, ex)
 
     @defer.inlineCallbacks
@@ -238,6 +246,21 @@ class General(CommandsTestBase):
         t(a, ex)
 
     @defer.inlineCallbacks
+    def test_expireat(self):
+        r = self.redis
+        t = self.assertEqual
+
+        a = yield r.set('a', 1)
+        ex = 'OK'
+        t(a, ex)
+        a = yield r.expireat('a', int(time.time() + 10))
+        ex = 1
+        t(a, ex)
+        a = yield r.expireat('zzzzz', int(time.time() + 10))
+        ex = 0
+        t(a, ex)
+
+    @defer.inlineCallbacks
     def test_setex(self):
         r = self.redis
         t = self.assertEqual
@@ -267,6 +290,9 @@ class General(CommandsTestBase):
         t(a, ex)
 
         a = yield r.mset({'ma': 1, 'mb': 2}, preserve=True)
+        ex = 0
+
+        a = yield r.msetnx({'ma': 1, 'mb': 2})
         ex = 0
         t(a, ex)
 
@@ -475,6 +501,18 @@ class General(CommandsTestBase):
         d.addCallback(step1)
         return d
 
+    @defer.inlineCallbacks
+    def test_watch(self):
+        r = yield self.redis.watch('foo')
+        self.assertEqual(r, 'OK')
+
+    @defer.inlineCallbacks
+    def test_unwatch(self):
+        yield self.redis.watch('foo')
+        r = yield self.redis.unwatch()
+        self.assertEqual(r, 'OK')
+
+
 class Strings(CommandsTestBase):
     """Test commands that operate on string values.
     """
@@ -502,6 +540,9 @@ class Strings(CommandsTestBase):
         self.assertEqual(a, 'OK')
 
         a = yield self.redis.set('b', 'xxx', preserve=True)
+        self.assertEqual(a, 0)
+
+        a = yield self.redis.setnx('b', 'xxx')
         self.assertEqual(a, 0)
 
         a = yield self.redis.get('b')
@@ -678,6 +719,14 @@ class Lists(CommandsTestBase):
         except ResponseError, e:
             t(str(e), 'ERR Operation against a key holding the wrong kind '+
                            'of value')
+        yield r.delete('l')
+        a = yield r.push('l', 'a', no_create=True)
+        ex = 0
+        t(a, ex)
+
+        a = yield r.push('l', 'a', tail=True, no_create=True)
+        ex = 0
+        t(a, ex)
 
     @defer.inlineCallbacks
     def test_llen(self):
@@ -1474,6 +1523,67 @@ class LargeMultiBulk(CommandsTestBase):
             r.sadd('s', i)
         res = yield r.smembers('s')
         t(res, set(map(str, data)))
+
+
+class MultiBulk(CommandsTestBase):
+    @defer.inlineCallbacks
+    def test_nested_multibulk(self):
+        r = self.redis
+        t = self.assertEqual
+
+        yield r.delete('str1', 'str2', 'list1', 'list2')
+        yield r.set('str1', 'str1')
+        yield r.set('str2', 'str2')
+        yield r.lpush('list1', 'b1')
+        yield r.lpush('list1', 'a1')
+        yield r.lpush('list2', 'b2')
+        yield r.lpush('list2', 'a2')
+
+        r.multi()
+        r.get('str1')
+        r.lrange('list1', 0, -1)
+        r.get('str2')
+        r.lrange('list2', 0, -1)
+        r.get('notthere')
+
+        a = yield r.execute()
+        ex = ['str1', ['a1', 'b1'], 'str2', ['a2', 'b2'], None]
+        t(a, ex)
+
+        a = yield r.get('str2')
+        ex = 'str2'
+        t(a, ex)
+
+    @defer.inlineCallbacks
+    def test_empty_multibulk(self):
+        r = self.redis
+        t = self.assertEqual
+
+        yield r.delete('list1')
+        a = yield r.lrange('list1', 0, -1)
+        ex = []
+        t(a, ex)
+
+    @defer.inlineCallbacks
+    def test_null_multibulk(self):
+        r = self.redis
+        t = self.assertEqual
+
+        clientCreator = protocol.ClientCreator(reactor, self.protocol)
+        r2 = yield clientCreator.connectTCP(REDIS_HOST, REDIS_PORT)
+
+        yield r.delete('a')
+
+        r.watch('a')
+        r.multi()
+        yield r.set('a', 'a')
+        yield r2.set('a', 'b')
+
+        r2.transport.loseConnection()
+
+        a = yield r.execute()
+        ex = None
+        t(a, ex)
 
 
 class SortedSet(CommandsTestBase):
