@@ -1142,6 +1142,8 @@ class Sets(CommandsTestBase):
         ex = 1
         t(a, ex)
 
+        yield r.set('l', '123')
+
         try:
             yield r.sinter()
             
