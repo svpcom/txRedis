@@ -147,6 +147,9 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
             if len(line) == 0:
                 continue
 
+            if line.lower() in ('sync', 'ping'):
+                return self.responseReceived(line)
+
             # first byte indicates reply type
             reply_type = line[0]
             reply_data = line[1:]
@@ -160,7 +163,7 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
             # Single line (+)
             elif reply_type == self.SINGLE_LINE:
                 self.singleLineReceived(reply_data)
-            # Bulk data (&)
+            # Bulk data (*)
             elif reply_type == self.BULK:
                 try:
                     self._bulk_length = int(reply_data)
