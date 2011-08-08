@@ -149,7 +149,7 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
             if len(line) == 0:
                 continue
 
-            if line.lower() in ('sync', 'ping'):
+            if line in ('SYNC ', 'PING'):
                 return self.responseReceived(line)
 
             # first byte indicates reply type
