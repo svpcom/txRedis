@@ -1,4 +1,5 @@
 import time
+import os
 
 from twisted.internet import error
 from twisted.internet import protocol
@@ -12,7 +13,7 @@ from txredis.protocol import Redis, RedisSubscriber, RedisClientFactory
 from txredis.protocol import ResponseError
 
 REDIS_HOST = 'localhost'
-REDIS_PORT = 6381
+REDIS_PORT = int(os.environ.get('TXREDIS_TEST_PORT', 6381))
 
 
 class CommandsTestBase(unittest.TestCase):
