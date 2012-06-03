@@ -85,7 +85,7 @@ def _method_template(method):
         attempt = kwargs.pop('attempt', 1)
 
         def trapFailure(fail):
-            if fail.check("txredis.protocol.ResponseError") or attempt >= self.max_attempts:
+            if fail.check("txredis.protocol.ResponseError", defer.CancelledError) or attempt >= self.max_attempts:
                 return fail
 
             log.err(fail, "Failure in %r, reconnect is attempted (attempt=%d)" % (self, attempt))
@@ -109,7 +109,7 @@ def _method_template(method):
 
 class RedisReconnectingProxy(object):
     """
-    I feel like always connected Redis protocol instance. 
+    I feel like always connected Redis protocol instance.
 
     If disconnect happens, and in case of any other error, I perform automatic
     and transparent reconnect.
@@ -124,7 +124,7 @@ class RedisReconnectingProxy(object):
     @type timeout_retry: C{int}
     @ivar timeout_operation: timeout for Redis operation (sec)
     @type timeout_operation: C{int}
-    @ivar max_attempts: maximum number of attempts 
+    @ivar max_attempts: maximum number of attempts
     @type max_attempts: C{int}
     """
 
@@ -140,7 +140,7 @@ class RedisReconnectingProxy(object):
         @type timeout_retry: C{int}
         @param timeout_operation: timeout for Redis operation (sec)
         @type timeout_operation: C{int}
-        @param max_attempts: maximum number of attempts 
+        @param max_attempts: maximum number of attempts
         @type max_attempts: C{int}
         """
         self.host = host

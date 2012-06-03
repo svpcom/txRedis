@@ -13,7 +13,7 @@ from txredis.protocol import Redis, RedisSubscriber, RedisClientFactory
 from txredis.protocol import ResponseError
 
 REDIS_HOST = 'localhost'
-REDIS_PORT = int(os.environ.get('TXREDIS_TEST_PORT', 6381))
+REDIS_PORT = int(os.environ.get('TXREDIS_TEST_PORT', 6379))
 
 
 class CommandsTestBase(unittest.TestCase):
@@ -548,6 +548,21 @@ class Strings(CommandsTestBase):
 
         a = yield self.redis.get('b')
         self.assertEqual(a, '105.2')
+
+    @defer.inlineCallbacks
+    def test_cancel(self):
+        r = self.redis
+        t = self.assertEqual
+
+        d = r.set('a', 'foo').addCallbacks(lambda x: self.fail('Should fail, but return: %r' % (x,)), lambda f: f.trap(defer.CancelledError))
+        d.cancel()
+        yield d
+
+        a = yield r.set('a', 'bar')
+        t(a, 'OK')
+
+        a = yield r.get('a')
+        t(a, u'bar')
 
     @defer.inlineCallbacks
     def test_get(self):
