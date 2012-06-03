@@ -1,6 +1,8 @@
 
 from txredis.test import test_redis
 from txredis.proxy import RedisReconnectingProxy
+from twisted.trial import unittest
+from twisted.internet import defer
 
 class RedisReconnectingProxyMixin:
     def setUp(self):
@@ -8,6 +10,19 @@ class RedisReconnectingProxyMixin:
 
     def tearDown(self):
         self.redis._cleanup()
+
+class TestProxy(RedisReconnectingProxyMixin, unittest.TestCase):
+
+    @defer.inlineCallbacks
+    def test_reconnect(self):
+        a = yield self.redis.ping()
+        self.assertEqual(a, 'PONG')
+
+        self.redis.connection.transport.loseConnection()
+
+        a = yield self.redis.ping()
+        self.assertEqual(a, 'PONG')
+        self.flushLoggedErrors('twisted.internet.error.ConnectionDone')
 
 class General(RedisReconnectingProxyMixin, test_redis.General):
     pass

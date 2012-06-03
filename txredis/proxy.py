@@ -3,6 +3,7 @@ Safe reconnecting proxy over RedisClient.
 """
 
 from twisted.internet import defer, protocol, reactor, task
+from twisted.internet.task import deferLater
 from twisted.python import failure, log
 
 try:
@@ -91,14 +92,11 @@ def _method_template(method):
             log.err(fail, "Failure in %r, reconnect is attempted (attempt=%d)" % (self, attempt))
 
             if self.connection is not None:
+                self.connection.setTimeout(None)
                 self.connection.transport.loseConnection()
-            self.connection = None
+                self.connection = None
 
-            d = defer.Deferred()
-            reactor.callLater(self.timeout_retry, d.callback, None)
-            d.addCallback(lambda _: getattr(self, method)(*args, attempt=attempt+1, **kwargs))
-
-            return d
+            return deferLater(reactor, self.timeout_retry, lambda : getattr(self, method)(*args, attempt=attempt+1, **kwargs))
 
         return self._get_connection().addCallback(lambda connection: getattr(connection, method)(*args, **kwargs)) \
                 .addErrback(trapFailure)
@@ -169,6 +167,7 @@ class RedisReconnectingProxy(object):
             self.connection.transport.loseConnection()
             self.connection.setTimeout(None)
             self.connection = None
+
         if self.pinger is not None:
             self.pinger.stop()
             self.pinger = None
